@@ -1,57 +1,46 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings  #-}
+
 module DeliveryContractWithOracle where
 
 import Language.Marlowe.Extended.V1
 
+-- Define the main function to output the contract as JSON
 main :: IO ()
 main = printJSON deliveryContract
 
--- Parameters for simplicity
-explicitRefunds :: Bool
-explicitRefunds = False
+-- Define the slot number for two weeks
+slotsInTwoWeeks :: Timeout
+slotsInTwoWeeks = 60 * 60 * 24 * 14 `div` 20 -- Number of slots in two weeks
 
+-- Define parties involved in the contract
 seller, buyer, oracle :: Party
 seller = Role "Seller"
 buyer = Role "Buyer"
-oracle = Role "USPS_Oracle" -- Updated to USPS tracking oracle
+oracle = Role "USPS_Oracle" 
 
-sellerDeposit, buyerDeposit, totalDeposits :: Value
-sellerDeposit = ConstantParam "Seller's deposit"
-buyerDeposit = ConstantParam "Buyer's deposit"
-totalDeposits = AddValue sellerDeposit buyerDeposit
+-- Define deposits from each party
+sellerDeposit, buyerDeposit :: Value
+sellerDeposit = Constant 100_000_000 -- 100 ADA in Lovelaces
+buyerDeposit = Constant 100_000_000 -- 100 ADA in Lovelaces
 
+-- Define the choice for the oracle
 deliveryConfirmation :: ChoiceId
 deliveryConfirmation = ChoiceId "Package Delivered" oracle
 
-initialDeposit :: Party -> Value -> Timeout -> Contract -> Contract -> Contract
-initialDeposit by deposit timeout timeoutContinuation continuation =
-  -- Existing logic for initial deposit
-
-oracleInput :: ChoiceId -> Timeout -> Contract -> Contract -> Contract
-oracleInput choiceId timeout timeoutContinuation continuation =
-  -- Adapted for delivery confirmation input
-
-refund :: Party -> Value -> Contract -> Contract
-refund who amount
-  | explicitRefunds = -- Existing refund logic
-  | otherwise = id
-
--- Logic for releasing funds based on delivery confirmation
-releaseFunds :: Contract
-releaseFunds =
-  When [Case (Choice deliveryConfirmation [Bound 1 1]) -- Assuming 1 for delivery confirmation
-        -- Logic to release funds to the seller upon delivery confirmation
-        $ Pay buyer (Party seller) ada totalDeposits
-        -- Add more logic as needed, e.g., handling non-delivery cases
-       ]
-       (TimeParam "Delivery Confirmation Deadline")
-       -- Logic for refund if no delivery confirmation is received
-       (refund seller sellerDeposit $ refund buyer buyerDeposit Close)
-
+-- Define the contract
 deliveryContract :: Contract
-deliveryContract = initialDeposit seller sellerDeposit (TimeParam "Seller Deposit Deadline") Close
-                    $ initialDeposit buyer buyerDeposit (TimeParam "Buyer Deposit Deadline") (refund seller sellerDeposit Close)
-                    $ releaseFunds
+deliveryContract =
+    When [Case (Deposit seller seller ada sellerDeposit)
+              (When [Case (Deposit buyer buyer ada buyerDeposit)
+                        (When [Case (Choice deliveryConfirmation [Bound 1 1])
+                                  (Pay seller (Party buyer) ada sellerDeposit
+                                  $ Pay buyer (Party seller) ada buyerDeposit
+                                  Close)]
+                              (slotsInTwoWeeks) -- Waiting for oracle's confirmation
+                              Close)] -- Buyer's deposit
+                    (slotsInTwoWeeks) -- Waiting for seller's deposit
+                    Close)]
+         (slotsInTwoWeeks) -- Initial timeout
+         Close -- Contract closure in case of timeout
 
--- Other functions like wait, gtLtEq, etc., are omitted as they might not be relevant to the updated scenario
