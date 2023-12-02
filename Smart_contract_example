@@ -1,46 +1,57 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings  #-}
+module DeliveryContractWithOracle where
 
-import Ledger -- Import the Ledger module
-import Ledger.Typed.Scripts -- Import Typed Scripts
-import PlutusTx -- Import PlutusTx
-import PlutusTx.Prelude -- Import Plutus Prelude
+import Language.Marlowe.Extended.V1
 
--- Define a data type for the Oracle confirmation
-data OracleConfirmation = Delivered | NotDelivered
-PlutusTx.unstableMakeIsData ''OracleConfirmation
+main :: IO ()
+main = printJSON deliveryContract
 
--- Define the contract parameters
-data EscrowParams = EscrowParams
-    { sellerAddr :: PubKeyHash
-    , buyerAddr  :: PubKeyHash
-    , oracleAddr :: PubKeyHash
-    , collateral :: Integer -- Amount of ADA in Lovelace
-    }
+-- Parameters for simplicity
+explicitRefunds :: Bool
+explicitRefunds = False
 
--- Define the validation logic
-{-# INLINABLE mkValidator #-}
-mkValidator :: EscrowParams -> OracleConfirmation -> ScriptContext -> Bool
-mkValidator params oracleConf ctx = ...
+seller, buyer, oracle :: Party
+seller = Role "Seller"
+buyer = Role "Buyer"
+oracle = Role "USPS_Oracle" -- Updated to USPS tracking oracle
 
--- Boilerplate code for compiling
-data Escrow
-instance Scripts.ValidatorTypes Escrow where
-    type instance DatumType Escrow = OracleConfirmation
-    type instance RedeemerType Escrow = ()
+sellerDeposit, buyerDeposit, totalDeposits :: Value
+sellerDeposit = ConstantParam "Seller's deposit"
+buyerDeposit = ConstantParam "Buyer's deposit"
+totalDeposits = AddValue sellerDeposit buyerDeposit
 
-typedValidator :: EscrowParams -> Scripts.TypedValidator Escrow
-typedValidator params = Scripts.mkTypedValidator @Escrow
-    ($$(PlutusTx.compile [|| mkValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode params)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-    wrap = Scripts.wrapValidator @OracleConfirmation @()
+deliveryConfirmation :: ChoiceId
+deliveryConfirmation = ChoiceId "Package Delivered" oracle
 
-validator :: EscrowParams -> Validator
-validator = Scripts.validatorScript . typedValidator
+initialDeposit :: Party -> Value -> Timeout -> Contract -> Contract -> Contract
+initialDeposit by deposit timeout timeoutContinuation continuation =
+  -- Existing logic for initial deposit
 
--- The address of the smart contract on the blockchain
-contractAddress :: EscrowParams -> Ledger.Address
-contractAddress = scriptAddress . validator
+oracleInput :: ChoiceId -> Timeout -> Contract -> Contract -> Contract
+oracleInput choiceId timeout timeoutContinuation continuation =
+  -- Adapted for delivery confirmation input
+
+refund :: Party -> Value -> Contract -> Contract
+refund who amount
+  | explicitRefunds = -- Existing refund logic
+  | otherwise = id
+
+-- Logic for releasing funds based on delivery confirmation
+releaseFunds :: Contract
+releaseFunds =
+  When [Case (Choice deliveryConfirmation [Bound 1 1]) -- Assuming 1 for delivery confirmation
+        -- Logic to release funds to the seller upon delivery confirmation
+        $ Pay buyer (Party seller) ada totalDeposits
+        -- Add more logic as needed, e.g., handling non-delivery cases
+       ]
+       (TimeParam "Delivery Confirmation Deadline")
+       -- Logic for refund if no delivery confirmation is received
+       (refund seller sellerDeposit $ refund buyer buyerDeposit Close)
+
+deliveryContract :: Contract
+deliveryContract = initialDeposit seller sellerDeposit (TimeParam "Seller Deposit Deadline") Close
+                    $ initialDeposit buyer buyerDeposit (TimeParam "Buyer Deposit Deadline") (refund seller sellerDeposit Close)
+                    $ releaseFunds
+
+-- Other functions like wait, gtLtEq, etc., are omitted as they might not be relevant to the updated scenario
