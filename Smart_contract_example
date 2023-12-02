@@ -1,0 +1,46 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+import Ledger -- Import the Ledger module
+import Ledger.Typed.Scripts -- Import Typed Scripts
+import PlutusTx -- Import PlutusTx
+import PlutusTx.Prelude -- Import Plutus Prelude
+
+-- Define a data type for the Oracle confirmation
+data OracleConfirmation = Delivered | NotDelivered
+PlutusTx.unstableMakeIsData ''OracleConfirmation
+
+-- Define the contract parameters
+data EscrowParams = EscrowParams
+    { sellerAddr :: PubKeyHash
+    , buyerAddr  :: PubKeyHash
+    , oracleAddr :: PubKeyHash
+    , collateral :: Integer -- Amount of ADA in Lovelace
+    }
+
+-- Define the validation logic
+{-# INLINABLE mkValidator #-}
+mkValidator :: EscrowParams -> OracleConfirmation -> ScriptContext -> Bool
+mkValidator params oracleConf ctx = ...
+
+-- Boilerplate code for compiling
+data Escrow
+instance Scripts.ValidatorTypes Escrow where
+    type instance DatumType Escrow = OracleConfirmation
+    type instance RedeemerType Escrow = ()
+
+typedValidator :: EscrowParams -> Scripts.TypedValidator Escrow
+typedValidator params = Scripts.mkTypedValidator @Escrow
+    ($$(PlutusTx.compile [|| mkValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode params)
+    $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap = Scripts.wrapValidator @OracleConfirmation @()
+
+validator :: EscrowParams -> Validator
+validator = Scripts.validatorScript . typedValidator
+
+-- The address of the smart contract on the blockchain
+contractAddress :: EscrowParams -> Ledger.Address
+contractAddress = scriptAddress . validator
