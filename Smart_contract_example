@@ -5,13 +5,14 @@ module DeliveryContractWithOracle where
 
 import Language.Marlowe.Extended.V1
 
--- Define the main function to output the contract as JSON
 main :: IO ()
 main = printJSON deliveryContract
 
--- Define the slot number for two weeks
+-- Define the number of slots in two weeks as an Integer and convert to Timeout
 slotsInTwoWeeks :: Timeout
-slotsInTwoWeeks = 60 * 60 * 24 * 14 `div` 20 -- Number of slots in two weeks
+slotsInTwoWeeks = let
+    slots = (60 * 60 * 24 * 14) `div` 20 -- Calculate as Integer
+    in fromInteger slots -- Convert to Timeout
 
 -- Define parties involved in the contract
 seller, buyer, oracle :: Party
@@ -43,4 +44,3 @@ deliveryContract =
                     Close)]
          (slotsInTwoWeeks) -- Initial timeout
          Close -- Contract closure in case of timeout
-
