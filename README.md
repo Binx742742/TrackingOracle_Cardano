@@ -1,6 +1,5 @@
 # TrackingOracle_Cardano
 
-README for USPS Tracking Data Oracle Using Cardano Blockchain
 Project Overview
 This project involves creating a Python-based oracle that fetches package tracking information from the United States Postal Service (USPS) API and then sends this data to the Cardano blockchain using the Blockfrost API. The primary goal is to bridge real-world data (package tracking information) with the blockchain, allowing for decentralized verification and storage of this data.
 
